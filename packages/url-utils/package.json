@@ -18,10 +18,10 @@
     "access": "public"
   },
   "devDependencies": {
-    "mocha": "6.2.0",
+    "mocha": "6.2.2",
     "rewire": "^4.0.1",
     "should": "13.2.3",
-    "sinon": "7.4.1"
+    "sinon": "7.5.0"
   },
   "dependencies": {
     "cheerio": "0.22.0",

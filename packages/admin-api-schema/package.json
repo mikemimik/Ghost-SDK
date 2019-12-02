@@ -18,9 +18,9 @@
     "access": "public"
   },
   "devDependencies": {
-    "mocha": "6.2.0",
+    "mocha": "6.2.2",
     "should": "13.2.3",
-    "sinon": "7.4.1"
+    "sinon": "7.5.0"
   },
   "dependencies": {
     "bluebird": "^3.5.3",

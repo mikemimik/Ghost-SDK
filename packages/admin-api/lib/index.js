@@ -2,36 +2,81 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const token = require('./token');
+const Joi = require('@hapi/joi');
+const Url = require('url');
 
-const supportedVersions = ['v2', 'v3', 'canary'];
+// const pkgName = `@tryghost/admin-api`;
+// const prefix = (type = 'Invalid') => `GhostAdminAPI Config ${type}: ${pkgName}`;
+
+const urlValidation = Joi.custom((value) => {
+    if (!/^https?:\/\//.test(value)) {
+        throw new Error('must begin with "http" or "https"');
+    }
+    try {
+        new Url.URL(value); // Test value
+        const parsedUrl = Url.parse(value);
+        const {protocol, hostname, port} = parsedUrl;
+        const nextValue = Url.format({
+            protocol,
+            hostname,
+            port,
+            slashes: false
+        });
+        return nextValue;
+    } catch (err) {
+        throw new Error(err.message);
+    }
+}, 'Invalid url');
+
+const keyValidation = Joi
+    .string()
+    .pattern(/[0-9a-f]{24}:[0-9a-f]{64}/);
+    // .rule({message: `${prefix()} requires a "key" in following format {A}:{B}, where A is 24 hex characters and B is 64 hex characters`});
+
+const versionValidation = Joi
+    .valid('v2', 'v3', 'canary');
+
+const configSchema = Joi.object({
+    url: Joi.any().when('host', {
+        is: Joi.exist(),
+        then: Joi.any().optional(),
+        otherwise: urlValidation.required()
+    }),
+    version: versionValidation.required(),
+    ghostPath: Joi.string().default('ghost'),
+    key: keyValidation.required(),
+    host: urlValidation.optional(),
+    makeRequest: Joi.function()
+        .default(function () {
+            return function makeRequest({url, method, data, params = {}, headers = {}}) {
+                return axios({
+                    url,
+                    method,
+                    params,
+                    data,
+                    headers,
+                    paramsSerializer(params) {
+                        return Object.keys(params).reduce((parts, key) => {
+                            const val = encodeURIComponent([].concat(params[key]).join(','));
+                            return parts.concat(`${key}=${val}`);
+                        }, []).join('&');
+                    }
+                }).then((res) => {
+                    return res.data;
+                });
+            };
+        })
+}).without('url', ['host']);
 
 module.exports = function GhostAdminAPI(options) {
     if (this instanceof GhostAdminAPI) {
         return GhostAdminAPI(options);
     }
 
-    const defaultConfig = {
-        ghostPath: 'ghost',
-        makeRequest({url, method, data, params = {}, headers = {}}) {
-            return axios({
-                url,
-                method,
-                params,
-                data,
-                headers,
-                paramsSerializer(params) {
-                    return Object.keys(params).reduce((parts, key) => {
-                        const val = encodeURIComponent([].concat(params[key]).join(','));
-                        return parts.concat(`${key}=${val}`);
-                    }, []).join('&');
-                }
-            }).then((res) => {
-                return res.data;
-            });
-        }
-    };
-
-    const config = Object.assign({}, defaultConfig, options);
+    const {value: config, error} = configSchema.validate(options);
+    if (error) {
+        throw error; 
+    }
 
     // new GhostAdminAPI({host: '...'}) is deprecated
     if (config.host) {
@@ -40,31 +85,6 @@ module.exports = function GhostAdminAPI(options) {
         if (!config.url) {
             config.url = config.host;
         }
-    }
-
-    if (!config.version) {
-        throw new Error('GhostAdminAPI Config Missing: @tryghost/admin-api requires a "version" like "v2"');
-    }
-    if (!supportedVersions.includes(config.version)) {
-        throw new Error('GhostAdminAPI Config Invalid: @tryghost/admin-api does not support the supplied version');
-    }
-    if (!config.url) {
-        throw new Error('GhostAdminAPI Config Missing: @tryghost/admin-api requires a "url" like "https://site.com" or "https://site.com/blog"');
-    }
-    if (!/https?:\/\//.test(config.url)) {
-        throw new Error('GhostAdminAPI Config Invalid: @tryghost/admin-api requires a "url" with a protocol like "https://site.com" or "https://site.com/blog"');
-    }
-    if (config.url.endsWith('/')) {
-        throw new Error('GhostAdminAPI Config Invalid: @tryghost/admin-api requires a "url" without a trailing slash like "https://site.com" or "https://site.com/blog"');
-    }
-    if (config.ghostPath.endsWith('/') || config.ghostPath.startsWith('/')) {
-        throw new Error('GhostAdminAPI Config Invalid: @tryghost/admin-api requires a "ghostPath" without a leading or trailing slash like "ghost"');
-    }
-    if (!config.key) {
-        throw new Error('GhostAdminAPI Config Invalid: @tryghost/admin-api requires a "key" to be supplied');
-    }
-    if (config.key && !/[0-9a-f]{24}:[0-9a-f]{64}/.test(config.key)) {
-        throw new Error('GhostAdminAPI Config Invalid: @tryghost/admin-api requires a "key" in following format {A}:{B}, where A is 24 hex characters and B is 64 hex characters');
     }
 
     const resources = [

@@ -2,6 +2,7 @@
 // const testUtils = require('./utils');
 require('./utils');
 const should = require('should');
+const assert = require('assert');
 
 const http = require('http');
 const url = require('url');
@@ -25,7 +26,7 @@ describe('GhostAdminAPI', function () {
             server = http.createServer();
             server.on('listening', () => {
                 const {address, port} = server.address();
-                config.url = `http://${address}:${port}`;
+                config.url = `http://${address}:${port}/`;
                 // config.url = `http://ghost.local`;
                 done();
             });
@@ -124,48 +125,219 @@ describe('GhostAdminAPI', function () {
             server.close();
         });
 
-        it('Requires a config object with host, version and key', function () {
-            should.throws(
-                () => new GhostAdminAPI(),
-                Error,
-                'Missing config object'
-            );
-            should.throws(
-                () => new GhostAdminAPI({url: config.url, version: config.version}),
-                Error,
-                'Missing config.key property'
-            );
+        describe.only('Options config object validation', function () {
+            it('Requires options to be an object', function () {
+                assert.throws(
+                    () => new GhostAdminAPI(),
+                    Error,
+                    'Missing config object'
+                );
+            });
+            it('Throws when supplied with empty object', function () {
+                assert.throws(
+                    () => new GhostAdminAPI({}),
+                    Error,
+                    'Missing config object'
+                );
+            });
 
-            should.throws(
-                () => new GhostAdminAPI({version: config.version, key: config.key}),
-                Error,
-                'Missing config.url property'
-            );
+            describe('Property options.version', function () {
+                it('is required', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({}),
+                        {
+                            name: 'ValidationError',
+                            message: '"version" is required'
+                        },
+                        'Missing config.version property'
+                    );
+                });
 
-            should.throws(
-                () => new GhostAdminAPI({url: config.url, key: config.key}),
-                Error,
-                'Missing config.version property'
-            );
+                it('is from valid list', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: 'v12',
+                            key: config.key,
+                            url: config.url
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"version" must be one of [v2, v3, canary]'
+                        },
+                        'Invalid config.version property'
+                    );
+                });
+            });
 
-            should.doesNotThrow(
-                () => new GhostAdminAPI({url: config.url, version: config.version, key: config.key}),
-                Error,
-                'Correct config properties'
-            );
-            should.doesNotThrow(
-                () => new GhostAdminAPI(config),
-                Error,
-                'Correct config object'
-            );
-        });
+            describe('Property options.key', function () {
+                it('is required', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({version: config.version}),
+                        {
+                            name: 'ValidationError',
+                            message: '"key" is required'
+                        },
+                        'Missing config.key property'
+                    );
+                });
+                it('must be a string', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: 123
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"key" must be a string'
+                        },
+                        'Invalid config.key property'
+                    );
+                });
+                it('must match regex', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: 'abcd:ef123'
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"key" with value "abcd:ef123" fails to match the required pattern: /[0-9a-f]{24}:[0-9a-f]{64}/'
+                        },
+                        'Invalid config.key property'
+                    );
+                });
+                it('cannot be empty string', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: ''
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"key" is not allowed to be empty'
+                        },
+                        'Invalid config.key property'
+                    );
+                });
+            });
+            
+            describe('Property options.url', function () {
+                it('is required', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"url" is required'
+                        },
+                        'Missing config.url property'
+                    );
+                });
+                it('cannot be supplied with "host" property', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key,
+                            url: config.url,
+                            host: config.url
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"url" conflict with forbidden peer "host"'
+                        },
+                        'Invalid config.url property'
+                    );
+                });
+                it('must begin with "http" or "https"', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key,
+                            url: 'not-real:/url'
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"url" failed custom validation because must begin with "http" or "https"'
+                        },
+                        'Invalid config.url property'
+                    );
+                });
+                it('must be a valid url', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key,
+                            url: 'http://*@#$^'
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"url" failed custom validation because Invalid URL: http://*@#$^'
+                        },
+                        'Invalid config.url property'
+                    );
+                });
+            });
 
-        it('Requires correct key format in config object', function () {
-            should.throws(
-                () => new GhostAdminAPI({key: 'badkey', url: config.url, version: config.version}),
-                Error,
-                'Invalid config.key property'
-            );
+            describe('Property options.host', function () {
+                it('is not required', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"url" is required'
+                        },
+                        'Missing config.host property'
+                    );
+                });
+                it('cannot be supplied with "url" property', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key,
+                            url: config.url,
+                            host: config.url
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"url" conflict with forbidden peer "host"'
+                        },
+                        'Invalid config.url property'
+                    );
+                });
+                it('must begin with "http" or "https"', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key,
+                            host: 'not-real:/url'
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"host" failed custom validation because must begin with "http" or "https"'
+                        },
+                        'Invalid config.host property'
+                    );
+                });
+                it('must be a valid url', function () {
+                    assert.throws(
+                        () => new GhostAdminAPI({
+                            version: config.version,
+                            key: config.key,
+                            host: 'http://*@#$^'
+                        }),
+                        {
+                            name: 'ValidationError',
+                            message: '"host" failed custom validation because Invalid URL: http://*@#$^'
+                        },
+                        'Invalid config.host property'
+                    );
+                });
+            });
         });
 
         ['posts', 'pages', 'tags'].forEach((resource) => {
